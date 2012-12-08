@@ -65,18 +65,12 @@ class SelectableCollection extends Backbone.Collection
   selected: () => @filter((model) -> model.get('selected'))[0]
 
 # TODO
-#  - expand browsing to elements above the fold:
-#    - factor out a SelectableView that does outlining and binds/unbinds keyhandler on
-#      select/deselect
-#    - make a linkedlist of selectable views?
-#    - select comment box (tab to enter)
-#    - select article (upvote, enter to follow link, u to follow user)
-#    - top nav
-#      - a/d to move left/right (with wrap around behavior)
-#  - browsable bottom nav
-#    - todo v2
+#  - keyboard shortcuts for titleview: enter, u
+#   - make top nav items selectable
+#  - bottom nav or "more comments" selectable
 #  - convert all window.opens to use chrome.tabs
 #  - help modal when you press 'h'
+#  - homepage shortcuts
 
 ensure_in_viewport = (div) ->
   scroll_pos = $(document).scrollTop()
