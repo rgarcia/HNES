@@ -12,7 +12,12 @@
       "run_at": "document_end",
       "all_frames": true,
       "css": [ "stylesheets/style.css" ],
-      "js": ["javascripts/jquery-1.8.3.min.js", "javascripts/underscore-min.js", "javascripts/backbone-min.js", "javascripts/hnes.js"],
+      "js": [
+        "javascripts/vendor/jquery-1.8.3.min.js",
+        "javascripts/vendor/underscore-min.js",
+        "javascripts/vendor/backbone-min.js",
+        "javascripts/hnes.js"
+      ],
       "matches": [
         "http://news.ycombinator.com/*",
         "https://news.ycombinator.com/*",
