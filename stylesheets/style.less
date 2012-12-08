@@ -7,21 +7,27 @@
   background-color: @highlight-color;
 }
 
-tr.selected {
-  .highlight;
-  outline: @outline-width @outline-style @outline-color;
-}
-
-span.collapse {
-  cursor: pointer;
-  margin-left: 5px;
-  &:hover {
-    text-decoration: underline;
+tr {
+  .selected {
+    .highlight;
+    outline: @outline-width @outline-style @outline-color;
   }
 }
 
-span.keyNavAnnotation {
-  font-size: 9px;
-  position: relative;
-  top: -6px;
+span {
+  .collapse {
+    margin-left: 5px;
+    cursor: pointer;
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+}
+
+span {
+  .keyNavAnnotation {
+    position: relative;
+    top: -6px;
+    font-size: 9px;
+  }
 }
