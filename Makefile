@@ -18,4 +18,4 @@ build:
 
 watch:
 	@echo "Watching less and coffee files..."; \
-	watchr -e "watch('javascripts/.*\.coffee') { system 'make' }"
+	watchr -e "watch('javascripts/.*\.coffee') { system 'make' }; watch('stylesheets/.*\.less') { system 'make' }"

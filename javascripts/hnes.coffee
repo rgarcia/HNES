@@ -3,45 +3,68 @@ log = () ->
   return if not debug
   console.log.apply console, arguments
 
-class Comment extends Backbone.Model
+# doubly-linked list of selectable things
+class SelectableModel extends Backbone.Model
+  defaults:
+    selected: false
+    next: null
+    prev: null
+  next: () =>
+    if @get('next')
+      @set { selected: false }
+      @get('next').set { selected: true }
+      return @get('next')
+    @
+  prev: () =>
+    if @get('prev')
+      @set { selected: false }
+      @get('prev').set { selected: true }
+      return @get('prev')
+    @
+
+class Reply extends SelectableModel
+
+class Comment extends SelectableModel
   defaults: () ->
     parent: null
-    children: new CommentCollection()
+    children: []
     user: null
     content: null
     # HNES display-state variables
     collapsed: false
     hidden: false
-    selected: false
   initialize: () ->
     @on 'change:collapsed', (model, collapsed) =>
       if collapsed
         # collapsing a comment hides all its children
-        @get('children').each (child) -> child.set { hidden: true }
+        _(@get('children')).each (child) -> child.set { hidden: true }
       else
         # expanding a comment shows all the children and expands them
-        @get('children').each (child) ->
+        _(@get('children')).each (child) ->
           child.set { hidden: false, collapsed: false }
     @on 'change:hidden', (model, hidden) =>
-      @get('children').each (child) -> child.set { hidden: hidden }
+      _(@get('children')).each (child) -> child.set { hidden: hidden }
   tree_size: () =>
-    1 + @get('children').chain().invoke('tree_size').reduce(((a, b) -> a + b), 0).value()
-
-class CommentCollection extends Backbone.Collection
-  model: Comment
-  move_selection: (direction) =>
+    1 + _(@get('children')).chain().invoke('tree_size').reduce(((a, b) -> a + b), 0).value()
+  # override next/prev to skip hidden comments
+  next: () => @move 1
+  prev: () => @move -1
+  move: (direction) =>
     # select the next non-hidden comment
-    current_selection = @where({ selected: true })[0]
-    current_selection_i = @indexOf(current_selection)
+    current_selection = @
+    current_selection_i = @collection.indexOf current_selection
     new_selection_i = current_selection_i
     while true
       new_selection_i += direction
-      return current_selection if not (0 <= new_selection_i < @length)
-      new_selection = @at new_selection_i
+      return current_selection if not (0 <= new_selection_i < @collection.length)
+      new_selection = @collection.at new_selection_i
       break if not new_selection.get('hidden')
-    current_selection.set 'selected', false
-    new_selection.set 'selected', true
+    current_selection.set { selected: false }
+    new_selection.set { selected: true }
     new_selection
+
+class SelectableCollection extends Backbone.Collection
+  model: SelectableModel
 
 # TODO
 #  - expand browsing to elements above the fold:
@@ -72,7 +95,6 @@ class CollapseToggle extends Backbone.View
   click: =>
     @model.set 'collapsed', (not @model.get('collapsed'))
   render: =>
-    console.log 'render!'
     @$el.html(if @model.get('collapsed') then "[+] (#{@model.tree_size()-1} children)" else '[-]')
 
 class KeyNavAnnotation extends Backbone.View
@@ -92,13 +114,16 @@ class KeyNavAnnotation extends Backbone.View
   render: =>
     @$el.html(if @model.get('selected') then "[#{@key}]" else "")
 
-class CommentView extends Backbone.View
+class SelectableView extends Backbone.View
   initialize: (options) ->
     @model.on 'change:selected', (model, selected) =>
       @$el.toggleClass 'selected', selected
       ensure_in_viewport @el if selected
+
+class CommentView extends SelectableView
+  initialize: (options) ->
+    super options
     @model.on 'change:collapsed', (model, collapsed) =>
-      log 'change:collapsed', collapsed, @model.get('user')
       if collapsed then @collapse() else @show()
     @model.on 'change:hidden', (model, hidden) =>
       if hidden then @hide() else @show()
@@ -160,9 +185,10 @@ class CommentView extends Backbone.View
 
 # traverse the page for comments
 $(document).ready () ->
-  comments = new CommentCollection()
+  selectable_things = new SelectableCollection()
   comment_views = []
   last_comment_at_depth = {} # map from depth to last comment seen at that depth. used to fill
+  last_comment = null
   $('table:first > tbody > tr:nth-child(3):first > td:first > table:eq(1) > tbody > tr').each () ->
     $row = $(this)
     depth  = parseInt($row.find('img:first').attr('width')) / 40
@@ -172,34 +198,45 @@ $(document).ready () ->
       content  : $row.find('table > tbody > tr:first > td:last .comment').text()
       depth    : depth
       parent   : parent
-    last_comment_at_depth["#{depth}"] = comment # next we see at depth+1 will have this asa parent
-    parent.get('children').add comment if parent?
-    comments.add comment
+      prev     : last_comment
+    last_comment?.set { next: comment }
+    parent.get('children').push comment if parent?
+    selectable_things.add comment
     comment_views.push new CommentView el: $(this), model: comment
-  log 'COMMENTS', comments.models
+    last_comment = comment
+    last_comment_at_depth["#{depth}"] = comment # next we see at depth+1 will have this asa parent
+  log 'COMMENTS', selectable_things.models, selectable_things.at(0).collection
 
   # TODO: track this state more formally
-  comments.at(0).set 'selected', true
-  selected_comment = comments.at 0
+  selectable_things.at(0).set 'selected', true
+  selected_thing = selectable_things.at 0
 
   $('body').on 'keypress', (e) ->
-    log e.keyCode
+    #log e.keyCode
     switch e.keyCode
       when 74, 106 # j
-        selected_comment = comments.move_selection 1
+        selected_thing = selected_thing.next()
+        log 'selected', selected_thing.toJSON()
       when 75, 107 # k
-        selected_comment = comments.move_selection -1
+        selected_thing = selected_thing.prev()
+        log 'selected', selected_thing.toJSON()
       when 13 # Enter
-        selected_comment.set 'collapsed', (not selected_comment.get('collapsed'))
+        if selected_thing instanceof Comment
+          selected_thing.set 'collapsed', (not selected_thing.get('collapsed'))
       when 82, 114  # r
-        comment_view = _(comment_views).find (view) -> view.model.cid is selected_comment.cid
-        comment_view.reply()
+        if selected_thing instanceof Comment
+          log 'model.view', selected_thing.view
+          comment_view = _(comment_views).find (view) -> view.model.cid is selected_thing.cid
+          comment_view.reply()
       when 65, 97 # a
-        comment_view = _(comment_views).find (view) -> view.model.cid is selected_comment.cid
-        comment_view.vote 'up'
+        if selected_thing instanceof Comment
+          comment_view = _(comment_views).find (view) -> view.model.cid is selected_comment.cid
+          comment_view.vote 'up'
       when 90, 122 # z
-        comment_view = _(comment_views).find (view) -> view.model.cid is selected_comment.cid
-        comment_view.vote 'down'
+        if selected_thing instanceof Comment
+          comment_view = _(comment_views).find (view) -> view.model.cid is selected_comment.cid
+          comment_view.vote 'down'
       when 85, 117 # u
-        comment_view = _(comment_views).find (view) -> view.model.cid is selected_comment.cid
-        comment_view.open_user()
+        if selected_thing instanceof Comment
+          comment_view = _(comment_views).find (view) -> view.model.cid is selected_comment.cid
+          comment_view.open_user()
