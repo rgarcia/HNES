@@ -1,0 +1,27 @@
+{
+  "name": "Hacker News Enhancement Suite",
+  "version": "0.0.1",
+  "description": "Reddit Enhancement Suite ported to Hacker News",
+  "manifest_version": 2,
+  "permissions": ["tabs"],
+  "homepage_url": "https://github.com/rgarcia/HNES",
+  "offline_enabled": false,
+
+  "content_scripts": [
+    {
+      "run_at": "document_end",
+      "all_frames": true,
+      "css": [ "stylesheets/style.css" ],
+      "js": ["javascripts/jquery-1.8.3.min.js", "javascripts/underscore-min.js", "javascripts/backbone-min.js", "javascripts/hnes.js"],
+      "matches": [
+        "http://news.ycombinator.com/*",
+        "https://news.ycombinator.com/*",
+        "http://news.ycombinator.net/*",
+        "https://news.ycombinator.net/*",
+        "http://hackerne.ws/*",
+        "https://hackerne.ws/*",
+        "http://news.ycombinator.org/*",
+        "https://news.ycombinator.org/*"]
+    }
+  ]
+}

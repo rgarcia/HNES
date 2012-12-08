@@ -1,0 +1,27 @@
+@highlight-color: #F0F3FC;
+@outline-width: 1px;
+@outline-style: dashed;
+@outline-color: #888;
+
+.highlight {
+  background-color: @highlight-color;
+}
+
+tr.selected {
+  .highlight;
+  outline: @outline-width @outline-style @outline-color;
+}
+
+span.collapse {
+  cursor: pointer;
+  margin-left: 5px;
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+span.keyNavAnnotation {
+  font-size: 9px;
+  position: relative;
+  top: -6px;
+}
