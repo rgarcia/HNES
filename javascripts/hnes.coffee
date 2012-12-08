@@ -20,7 +20,8 @@ class Comment extends Backbone.Model
         @get('children').each (child) -> child.set { hidden: true }
       else
         # expanding a comment shows all the children and expands them
-        @get('children').each (child) -> child.set { hidden: false, collapsed: false }
+        @get('children').each (child) ->
+          child.set { hidden: false, collapsed: false }
     @on 'change:hidden', (model, hidden) =>
       @get('children').each (child) -> child.set { hidden: hidden }
   tree_size: () =>
@@ -44,7 +45,8 @@ class CommentCollection extends Backbone.Collection
 
 # TODO
 #  - expand browsing to elements above the fold:
-#    - factor out a SelectableView that does outlining and binds/unbinds keyhandler on select/deselect
+#    - factor out a SelectableView that does outlining and binds/unbinds keyhandler on
+#      select/deselect
 #    - make a linkedlist of selectable views?
 #    - select comment box (tab to enter)
 #    - select article (upvote, enter to follow link, u to follow user)
@@ -113,9 +115,15 @@ class CommentView extends Backbone.View
       return if @annotations.length is 9 # no more single digit numbers
       key = @annotations.length + 1
       href = $link.attr('href')
-      annotation_el = @make 'span', { title: "press #{key} to open link", class: 'keyNavAnnotation' }
+      annotation_el = @make 'span',
+        title: "press #{key} to open link"
+        class: 'keyNavAnnotation'
       $link.after annotation_el
-      @annotations.push new KeyNavAnnotation { el: annotation_el, model: @model, key: key, href: href }
+      @annotations.push new KeyNavAnnotation
+        el: annotation_el
+        model: @model
+        key: key
+        href: href
 
   original_styles: () =>
     # if altering any styles in hide/collapse, store the original here
@@ -132,13 +140,16 @@ class CommentView extends Backbone.View
     @$el.hide()
   collapse: () =>
     log "collapsing comment by '#{@model.get 'user'}'"
-    @$el.find('td:eq(2) > center').attr 'style', 'width:14px; height:18px;' # the height of the voting area controls is one way to ctrl the height of the username area
+    # the height of the voting area controls is one way to ctrl the height of the username area
+    @$el.find('td:eq(2) > center').attr 'style', 'width:14px; height:18px;'
     @$el.find('td:eq(2) > center').children().hide() # voting arrows
     @$el.find('td:eq(3) > :not(:first-child)').hide() # hide all but the username <td></td>
-    @$el.find('td:eq(3) div').attr 'style', 'margin-top:0px' # get rid of inline style, it messes up alignment of username in selection box
+    # get rid of inline style, it messes up alignment of username in selection box
+    @$el.find('td:eq(3) div').attr 'style', 'margin-top:0px'
   vote: (dir) =>
     return if not (vote_link = @$el.find("td:eq(2) center a[id^=#{dir}_]"))
-    @$el.find("td:eq(2) center a[id^=#{d}_]")?[0].style.visibility = 'hidden' for d in ['up', 'down']
+    for d in ['up', 'down']
+      @$el.find("td:eq(2) center a[id^=#{d}_]")?[0].style.visibility = 'hidden'
     (new Image()).src = vote_link.attr 'href'
   reply: (new_window=false) =>
     return if not (link = @$el.find('p:last a')?.attr('href'))
@@ -151,7 +162,7 @@ class CommentView extends Backbone.View
 $(document).ready () ->
   comments = new CommentCollection()
   comment_views = []
-  last_comment_at_depth = {} # map from depth to last comment seen at that depth. used to fill 
+  last_comment_at_depth = {} # map from depth to last comment seen at that depth. used to fill
   $('table:first > tbody > tr:nth-child(3):first > td:first > table:eq(1) > tbody > tr').each () ->
     $row = $(this)
     depth  = parseInt($row.find('img:first').attr('width')) / 40
@@ -161,7 +172,7 @@ $(document).ready () ->
       content  : $row.find('table > tbody > tr:first > td:last .comment').text()
       depth    : depth
       parent   : parent
-    last_comment_at_depth["#{depth}"] = comment # next comment we see at depth+1 will have this as its parent
+    last_comment_at_depth["#{depth}"] = comment # next we see at depth+1 will have this asa parent
     parent.get('children').add comment if parent?
     comments.add comment
     comment_views.push new CommentView el: $(this), model: comment
