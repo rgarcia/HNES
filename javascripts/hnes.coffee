@@ -3,28 +3,58 @@ log = () ->
   return if not debug
   console.log.apply console, arguments
 
-# doubly-linked list of selectable things
+# doubly-linked list of selectable things that can respond to keypresses when in selected state
 class SelectableModel extends Backbone.Model
   defaults:
     selected: false
     next: null
     prev: null
-  next: () =>
-    if @get('next')
-      @set { selected: false }
-      @get('next').set { selected: true }
-      return @get('next')
+  initialize: =>
+    @on 'change:selected', (model, selected) =>
+      $(window)[if selected then 'on' else 'off'] 'keydown', @key_listener
+  move_to: (attr) =>
+    return @set({ selected: false }).get(attr).set({ selected: true }) if @get(attr)
     @
-  prev: () =>
-    if @get('prev')
-      @set { selected: false }
-      @get('prev').set { selected: true }
-      return @get('prev')
-    @
+  next: => @move_to 'next'
+  prev: => @move_to 'prev'
+  key_listener: (e) =>
+    switch e.keyCode
+      when 74 # j: select next
+        @next()
+      when 75 # k: select previous
+        @prev()
 
-class Title extends SelectableModel
+# adapted from window.vote in the HN source. used for voting on comments and submissions
+vote = (id) ->
+  item = _(id.split(/_/)).last()
+  $("##{dir}_#{item}")?[0].style.visibility = 'hidden' for dir in ['up', 'down']
+  (new Image()).src = $("##{id}").attr 'href'
+
+class Submission extends SelectableModel
+  key_listener: (e) =>
+    switch e.keyCode
+      when 13 # enter: follow submission link
+        window.open(@get('href')) if @get('href') # Follow the title link (Show HN => no link)
+      when 85 # u: follow user link in comment or submission
+        window.open "/user?id=#{@get('user')}"
+      when 65 # a: upvote
+        vote @get('upvote_link_id')
+      when 70 # f: flag/unflag
+        window.open(@get('flag_href')) if @get('flag_href')
+      else super e
 
 class AddComment extends SelectableModel
+  key_listener: (e) =>
+    # rotate focus between comment textarea, submit button, and nothing
+    current_focus = @get('focus')
+    return super(e) if (e.keyCode isnt 9) and (current_focus isnt 'textarea')
+    if not current_focus
+      @set { focus: 'textarea' }
+    else if current_focus is 'textarea'
+      @set { focus: 'input' }
+    else
+      @set { focus: 'textarea' }
+    false # block normal handling of tab
 
 class Comment extends SelectableModel
   defaults: () ->
@@ -32,10 +62,12 @@ class Comment extends SelectableModel
     children: []
     user: null
     content: null
+    links: []
     # HNES display-state variables
     collapsed: false
     hidden: false
-  initialize: () =>
+  initialize: =>
+    super
     @on 'change:collapsed', (model, collapsed) =>
       if collapsed
         # collapsing a comment hides all its children
@@ -54,22 +86,36 @@ class Comment extends SelectableModel
   move: (direction) =>
     # select the next non-hidden comment
     attr = if direction > 0 then 'next' else 'prev'
-    while new_selection = @get(attr)
+    while new_selection = (new_selection or @).get(attr)
       break if not new_selection.get('hidden')
     @set { selected: false } if new_selection?
     new_selection?.set { selected: true }
     new_selection or @
+  key_listener: (e) =>
+    if 48 < e.keyCode <= 57 # 1-9: follow a link annotation
+      index = e.keyCode - 49
+      window.open(@get('links')[index]) if @get('links')[index]
+    else if e.keyCode is 65 # a: upvote
+      vote @get('upvote_link_id')
+    else if e.keyCode is 90 # z: downvote
+      vote @get('downvote_link_id')
+    else if e.keyCode is 82 # r: reply
+      window.open(@get('reply_href')) if @get('reply_href')
+    else if e.keyCode is 85 # u: user's profile
+      window.open "/user?id=#{@get('user')}"
+    else if e.keyCode is 13 # enter: collapse
+      @set 'collapsed', !@get('collapsed')
+    else
+      super
 
 class SelectableCollection extends Backbone.Collection
   model: SelectableModel
-  selected: () => @filter((model) -> model.get('selected'))[0]
 
 # TODO
-#  - keyboard shortcuts for titleview: enter, u
-#   - make top nav items selectable
+#  - make top nav items selectable
 #  - bottom nav or "more comments" selectable
 #  - convert all window.opens to use chrome.tabs
-#  - help modal when you press 'h'
+#  - help modal when you press '?'
 #  - homepage shortcuts
 
 ensure_in_viewport = (div) ->
@@ -79,64 +125,50 @@ ensure_in_viewport = (div) ->
   $(document).scrollTop(scroll_pos + hidden_lower_pixels + 5) if hidden_lower_pixels > 0
   $(document).scrollTop(scroll_pos + rect.top - 5) if rect.top < 0
 
-class CollapseToggle extends Backbone.View
-  events: { click: 'click' }
-  initialize: (options) =>
-    @model.on 'change:collapsed', @render
-    @render()
-  click: =>
-    @model.set 'collapsed', (not @model.get('collapsed'))
-  render: =>
-    @$el.html(if @model.get('collapsed') then "[+] (#{@model.tree_size()-1} children)" else '[-]')
-
-class KeyNavAnnotation extends Backbone.View
-  initialize: (options) =>
-    @key = options.key
-    @href = options.href
-    @model.on 'change:selected', @render
-    @model.on 'change:selected', (model, selected) =>
-      if selected
-        $('body').on 'keypress', @key_listener
-      else
-        $('body').off 'keypress', @key_listener
-    @render()
-  key_listener: (e) =>
-    if e.keyCode is (48 + @key)
-      window.open @href
-  render: =>
-    @$el.html(if @model.get('selected') then "[#{@key}]" else "")
-
+# base view for all components:
+#  - toggles a 'selected' class when selected (potentially on sister elements as well)
+#  - ensures the selected div is viewable in the viewport
 class SelectableView extends Backbone.View
   initialize: (options) =>
     @model.on 'change:selected', (model, selected) =>
       @$el.toggleClass 'selected', selected
       ensure_in_viewport @el if selected
+    @sister_views = []
+    _(options.sister_els or []).each (sister_el) =>
+      console.log 'sister', sister_el, @model
+      @sister_views.push = new SelectableView({el: sister_el, model: @model})
 
-class TitleView extends SelectableView
-  initialize: (options) =>
-    super options
-    # make sister tr also highlight on selection
-    console.log 'sister', @$el.next()
-    @sister_tr = new SelectableView el: @$el.next(), model: @model
+class SubmissionView extends SelectableView
 
 class AddCommentView extends SelectableView
   initialize: (options) =>
-    super options
-    @focused = null
-  tab: () =>
-    if not @focused
-      @focused = @$el.find('textarea')
-      @focused.focus()
-    else if @focused?.is 'textarea'
-      @focused = @$el.find('input')
-      @focused.focus()
-    else if @focused?.is 'input'
-      @focused.blur()
-      @focused = null
+    super
+    @model.on 'change:focus', (model, tag) =>
+      @$el.find(tag)?.focus() if tag
+
+snark = _.once () -> alert 'WHY ARE YOU USING THE MOUSE???'
+class CollapseToggle extends Backbone.View
+  events: { click: 'click' }
+  initialize: (options) =>
+    @model.on 'change:collapsed', @render
+    @render()
+  render: =>
+    @$el.html(if @model.get('collapsed') then "[+] (#{@model.tree_size()-1} children)" else '[-]')
+  click: =>
+    snark()
+    @model.set 'collapsed', (not @model.get('collapsed'))
+
+class KeyNavAnnotation extends Backbone.View
+  initialize: (options) =>
+    @hotkey = options.hotkey
+    @model.on 'change:selected', @render
+    @render()
+  render: =>
+    @$el.html(if @model.get('selected') then "[#{@hotkey}]" else "")
 
 class CommentView extends SelectableView
   initialize: (options) =>
-    super options
+    super
     @model.on 'change:collapsed', (model, collapsed) =>
       if collapsed then @collapse() else @show()
     @model.on 'change:hidden', (model, hidden) =>
@@ -147,23 +179,17 @@ class CommentView extends SelectableView
     @collapse_toggle = new CollapseToggle { el: toggle_el, model: @model }
 
     # subview: link hotkeys
-    @annotations = []
-    _(@$el.find('td:eq(3) .comment a')).each (link) =>
-      $link = $(link)
-      return if $link.text() is 'reply'
-      return if @annotations.length is 9 # no more single digit numbers
-      key = @annotations.length + 1
-      href = $link.attr('href')
-      annotation_el = @make 'span',
-        title: "press #{key} to open link"
-        class: 'keyNavAnnotation'
-      $link.after annotation_el
-      @annotations.push new KeyNavAnnotation
-        el: annotation_el
-        model: @model
-        key: key
-        href: href
-
+    @annotations = _.map(
+      @model.get('links')
+      (link, index) =>
+        $link = @$el.find "td:eq(3) .comment a:eq(#{index})"
+        hotkey = index + 1
+        annotation_el = @make 'span',
+          title: "press #{hotkey} to open link"
+          class: 'keyNavAnnotation'
+        $link.after annotation_el
+        new KeyNavAnnotation { el: annotation_el, model: @model, hotkey: hotkey }
+    )
   original_styles: () =>
     # if altering any styles in hide/collapse, store the original here
     @$el.find('td:eq(2) > center').removeAttr 'style' # comment depth spacer is unstyled
@@ -185,97 +211,69 @@ class CommentView extends SelectableView
     @$el.find('td:eq(3) > :not(:first-child)').hide() # hide all but the username <td></td>
     # get rid of inline style, it messes up alignment of username in selection box
     @$el.find('td:eq(3) div').attr 'style', 'margin-top:0px'
-  vote: (dir) =>
-    return if not (vote_link = @$el.find("td:eq(2) center a[id^=#{dir}_]"))
-    for d in ['up', 'down']
-      @$el.find("td:eq(2) center a[id^=#{d}_]")?[0].style.visibility = 'hidden'
-    (new Image()).src = vote_link.attr 'href'
-  reply: (new_window=false) =>
-    return if not (link = @$el.find('p:last a')?.attr('href'))
-    if new_window then window.open(link) else window.location = link
-  open_user: (new_window=false) =>
-    return if not (link = @$el.find('td:eq(3) a:eq(0)')?.attr('href'))
-    if new_window then window.open(link) else window.location = link
 
-$(document).ready () ->
-  selectable_things = new SelectableCollection()
-  selectable_thing_views = []
-  register = (thing, thing_view) ->
-    selectable_things.add thing
-    selectable_thing_views.push thing_view
-  find_view = (model) ->
-    _(selectable_thing_views).find (view) -> view.model.cid is model.cid
+selectable_things = new SelectableCollection()
+# construct linked list
+# (assumes that selctable things are added to the collection in order)
+prev = null
+selectable_things.on 'add', (model) ->
+  model.set { prev: prev }
+  prev?.set { next: model }
+  prev = model
 
-  # the following assumes that selctable things are added to the collection in order
-  prev = null
-  selectable_things.on 'add', (model) ->
-    model.set { prev: prev }
-    prev?.set { next: model }
-    prev = model
+init_news_view = () ->
 
-  # article title
-  title = new Title()
-  title_view = new TitleView
-    el: $('table:first > tbody > tr:nth-child(3):first > td:first > table:eq(0) > tbody > tr:eq(0)')
-    model: title
-  register title, title_view
+init_item_view = () ->
+  # submission
+  submission_el = $('table:first > tbody > tr:nth-child(3):first >
+    td:first > table:eq(0) > tbody > tr:eq(0)')
+  submission = new Submission
+    title: submission_el.find('.title a').text()
+    href: submission_el.find('.title a')?.attr('href')
+    user: submission_el.next().find('a[href^="user"]')?.text()
+    upvote_link_id: submission_el.find('a[href^="vote"]')?.attr('id')
+    flag_href: submission_el.next().find('a[href^="/r?fnid"]')?.attr('href')
+  submission_view = new SubmissionView
+    el: submission_el
+    model: submission
+    sister_els: submission_el.next() # also toggle selected on this el
+  selectable_things.add submission
 
   # add comment box
   add_comment = new AddComment()
   add_comment_view = new AddCommentView
     el: $('table:first > tbody > tr:nth-child(3):first > td:first > table:eq(0) > tbody > tr:eq(3)')
     model: add_comment
-  register add_comment, add_comment_view
+  selectable_things.add add_comment
 
   # accumulate comments
   comment_views = []
-  last_comment_at_depth = {} # map from depth to last comment seen at that depth. used to fill
+  last_comment_at_depth = {} # map from depth to last comment seen at that depth. used to set parent
   first = null
   $('table:first > tbody > tr:nth-child(3):first > td:first > table:eq(1) > tbody > tr').each () ->
     $row = $(this)
     depth  = parseInt($row.find('img:first').attr('width')) / 40
     parent = last_comment_at_depth["#{depth-1}"]
     comment = new Comment
-      user     : $row.find('table > tbody > tr:first > td:last > :first .comhead a:first').text()
+      user     : $row.find('a[href^="user"]').text()
       content  : $row.find('table > tbody > tr:first > td:last .comment').text()
       depth    : depth
       parent   : parent
+      links    : $row.find('a[rel="nofollow"]').map () -> $(this).attr('href')
+      upvote_link_id: $row.find('a[id^="up_"]').attr('id')
+      downvote_link_id: $row.find('a[id^="down_"]').attr('id')
+      reply_href: $row.find('a[href^="reply"]').attr('href')
     parent.get('children').push comment if parent?
-    comment_view = new CommentView el: $(this), model: comment
-    register comment, comment_view
+    comment_view = new CommentView { el: $(this), model: comment }
+    selectable_things.add comment
     first = comment.set({ selected: true }) if not first
     last_comment_at_depth["#{depth}"] = comment # next we see at depth+1 will have this asa parent
 
-  selected_thing = selectable_things.selected()
+  # default to selecting submission if no comments present
+  submission.set({ selected: true }) if not first
 
-  $(window).on 'keydown', (e) ->
-    # log e.keyCode
-    switch e.keyCode
-      when 74, 106 # j: select next
-        if not find_view(selected_thing).focused
-          selected_thing = selected_thing.next()
-          log 'selected', selected_thing.toJSON()
-      when 75, 107 # k: select previous
-        if not find_view(selected_thing).focused
-          selected_thing = selected_thing.prev()
-          log 'selected', selected_thing.toJSON()
-      when 13 # Enter: collapse comment or follow submission link
-        if selected_thing instanceof Comment
-          selected_thing.set 'collapsed', (not selected_thing.get('collapsed'))
-      when 82, 114  # r: reply to comment
-        if selected_thing instanceof Comment
-          log 'model.view', selected_thing.view
-          find_view(selected_thing).reply()
-      when 65, 97 # a: upvote comment or submission
-        if selected_thing instanceof Comment
-          find_view(selected_thing).vote 'up'
-      when 90, 122 # z: downvote comment
-        if selected_thing instanceof Comment
-          find_view(selected_thing).vote 'down'
-      when 85, 117 # u: follow user link in comment or submission
-        if selected_thing instanceof Comment
-          find_view(selected_thing).open_user()
-      when 9 # tab: When add comment selected, cycle through text input and submit button
-        if selected_thing instanceof AddComment
-          find_view(selected_thing).tab()
-          return false
+$(document).ready () ->
+  if window.location.pathname is '/item'
+    init_item_view()
+  else if window.location.pathname is '/news'
+    init_news_view()
