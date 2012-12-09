@@ -31,6 +31,15 @@ vote = (id) ->
   (new Image()).src = $("##{id}").attr 'href'
 
 class Submission extends SelectableModel
+  @create: (submission_el) ->
+    new Submission
+      title: submission_el.find('.title a').text()
+      href: submission_el.find('.title a')?.attr('href')
+      user: submission_el.next().find('a[href^="user"]')?.text()
+      upvote_link_id: submission_el.find('a[href^="vote"]')?.attr('id')
+      flag_href: submission_el.next().find('a[href^="/r?fnid"]')?.attr('href')
+      comments_href: submission_el.next().find('a[href^="item"]')?.attr('href')
+
   key_listener: (e) =>
     switch e.keyCode
       when 13 # enter: follow submission link
@@ -39,6 +48,8 @@ class Submission extends SelectableModel
         window.open "/user?id=#{@get('user')}"
       when 65 # a: upvote
         vote @get('upvote_link_id')
+      when 67 # c: see comments
+        window.open @get('comments_href')
       when 70 # f: flag/unflag
         window.open(@get('flag_href')) if @get('flag_href')
       else super e
@@ -116,7 +127,6 @@ class SelectableCollection extends Backbone.Collection
 #  - bottom nav or "more comments" selectable
 #  - convert all window.opens to use chrome.tabs
 #  - help modal when you press '?'
-#  - homepage shortcuts
 
 ensure_in_viewport = (div) ->
   scroll_pos = $(document).scrollTop()
@@ -135,7 +145,6 @@ class SelectableView extends Backbone.View
       ensure_in_viewport @el if selected
     @sister_views = []
     _(options.sister_els or []).each (sister_el) =>
-      console.log 'sister', sister_el, @model
       @sister_views.push = new SelectableView({el: sister_el, model: @model})
 
 class SubmissionView extends SelectableView
@@ -222,17 +231,25 @@ selectable_things.on 'add', (model) ->
   prev = model
 
 init_news_view = () ->
+  trs = $('table:first > tbody > tr:eq(2) > td:eq(0) > table > tbody > tr')
+  index = 0
+  while index <= trs.length - 5
+    submission_el = $(trs[index])
+    submission = Submission.create submission_el
+    submission_view = new SubmissionView
+      el: submission_el
+      model: submission
+      sister_els: [ submission_el.next(), submission_el.next().next() ]
+    submission_el.next().next().html "<td colspan=3></td>" # makes the highlighting show up
+    selectable_things.add submission
+    submission.set { selected: true } if index is 0
+    index += 3
 
 init_item_view = () ->
   # submission
   submission_el = $('table:first > tbody > tr:nth-child(3):first >
     td:first > table:eq(0) > tbody > tr:eq(0)')
-  submission = new Submission
-    title: submission_el.find('.title a').text()
-    href: submission_el.find('.title a')?.attr('href')
-    user: submission_el.next().find('a[href^="user"]')?.text()
-    upvote_link_id: submission_el.find('a[href^="vote"]')?.attr('id')
-    flag_href: submission_el.next().find('a[href^="/r?fnid"]')?.attr('href')
+  submission = Submission.create submission_el
   submission_view = new SubmissionView
     el: submission_el
     model: submission
