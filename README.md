@@ -4,6 +4,13 @@
 
 ## Features
 
+* j/k to browse
+* enter to collapse a comment or follow a submission link
+* c to go to the comments on a submission
+* a/z upvote/downvote comment or submission
+* f flag
+* u follow user link on comment or submission
+
 ## Installing
 
 ```bash
