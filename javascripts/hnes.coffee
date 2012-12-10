@@ -292,5 +292,5 @@ init_item_view = () ->
 $(document).ready () ->
   if window.location.pathname is '/item'
     init_item_view()
-  else if window.location.pathname is '/news'
+  else if window.location.pathname in ['/', '/news']
     init_news_view()
