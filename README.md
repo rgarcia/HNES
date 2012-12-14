@@ -1,6 +1,6 @@
 # Hacker News Enhancement Suite
 
-[Reddit Enhancement Suite](RHES) ported to Hacker News.
+[Reddit Enhancement Suite](http://redditenhancementsuite.com/) ported to Hacker News.
 
 ## Features
 
