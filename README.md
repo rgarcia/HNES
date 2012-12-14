@@ -1,6 +1,6 @@
 # Hacker News Enhancement Suite
 
-[Reddit Enhancement Suite](http://redditenhancementsuite.com/) ported to Hacker News.
+[Reddit Enhancement Suite](https://github.com/honestbleeps/Reddit-Enhancement-Suite/) ported to Hacker News.
 
 ## Features
 
