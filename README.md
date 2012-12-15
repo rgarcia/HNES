@@ -10,6 +10,8 @@
 * a/z upvote/downvote comment or submission
 * f flag
 * u follow user link on comment or submission
+* l open the comments and the link
+* shift + *: do the action in a background tab
 
 ## Installing
 
@@ -25,6 +27,5 @@ make
 ## Developing
 
 ```bash
-npm install -g watchr
-make watch
+watch make
 ```

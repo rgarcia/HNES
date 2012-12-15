@@ -31,6 +31,15 @@ vote = (id) ->
   $("##{dir}_#{item}")?[0].style.visibility = 'hidden' for dir in ['up', 'down']
   (new Image()).src = $("##{id}").attr 'href'
 
+# we don't have access to chrome.tabs from a content script, so proxy it via messages to bg script
+tabs =
+  create: () -> chrome.extension.sendMessage { fn: 'tabs.create', args: _(arguments).toArray() }
+rel = (link) ->
+  link = "/#{link}" if link[0] isnt '/'
+  "#{window.location.origin}#{link}"
+open_tabs = (urls, options) => () =>
+  _(urls).each (url) => tabs.create _({ url: url }).extend(options)
+
 class Submission extends SelectableModel
   @create: (submission_el) ->
     new Submission
@@ -47,13 +56,20 @@ class Submission extends SelectableModel
     # a: upvote
     # c: see comments
     # f: flag/unflag
-    key 'enter', () =>
-      window.open(@get('href')) if @get('href') # Show HN => no link
-    key 'u', () => window.open "/user?id=#{@get('user')}"
-    key 'a', () => vote @get('upvote_link_id')
-    key 'c', () => window.open @get('comments_href')
+    # shift + *: do it in the background
+    if @get('href')
+      key 'enter',       open_tabs([@get('href')], { active: true })
+      key 'shift+enter', open_tabs([@get('href')], { active: false })
+    key 'u',       open_tabs([rel("/user?id=#{@get('user')}")], { active: true })
+    key 'shift+u', open_tabs([rel("/user?id=#{@get('user')}")], { active: false })
+    key 'c',       open_tabs([rel(@get('comments_href'))], { active: true })
+    key 'shift+c', open_tabs([rel(@get('comments_href'))], { active: false })
+    key 'l',       open_tabs([rel(@get('comments_href')), @get('href')], { active: true })
+    key 'shift+l', open_tabs([rel(@get('comments_href')), @get('href')], { active: false })
     key 'f', () =>
-      window.open(@get('flag_href')) if @get('flag_href')
+      if @get('flag_href')
+        window.open @get('flag_href')
+    key 'a', () => vote @get('upvote_link_id')
     super
 
 class AddComment extends SelectableModel
@@ -104,14 +120,17 @@ class Comment extends SelectableModel
     # r: reply
     # u: user's profile
     # enter: collapse
+    # shift + *: do it in the background
     _([1..9]).each (index) =>
-      key "#{index}", () =>
-        window.open(@get('links')[index]) if @get('links')[index]
+      key "#{index}",       open_tabs([@get('links')[index]], { active: true })
+      key "shift+#{index}", open_tabs([@get('links')[index]], { active: false })
     key 'a', () => vote @get('upvote_link_id')
     key 'z', () => vote @get('downvote_link_id')
-    key 'r', () =>
-      window.open(@get('reply_href')) if @get('reply_href')
-    key 'u', () => window.open "/user?id=#{@get('user')}"
+    if @get('reply_href')
+      key 'r',       open_tabs([rel(@get('reply_href'))], { active: true })
+      key 'shift+r', open_tabs([rel(@get('reply_href'))], { active: false })
+    key 'u',       open_tabs([rel("/user?id=#{@get('user')}")], { active: true })
+    key 'shift+u', open_tabs([rel("/user?id=#{@get('user')}")], { active: false })
     key 'enter', () => @set 'collapsed', !@get('collapsed')
     super
 
