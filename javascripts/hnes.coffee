@@ -11,18 +11,19 @@ class SelectableModel extends Backbone.Model
     prev: null
   initialize: =>
     @on 'change:selected', (model, selected) =>
-      $(window)[if selected then 'on' else 'off'] 'keydown', @key_listener
+      if not selected
+        key.deleteScope 'all' # clears out keybindings of previous selection
+      else
+        key.setScope 'all'
+        @keybindings()
   move_to: (attr) =>
     return @set({ selected: false }).get(attr).set({ selected: true }) if @get(attr)
     @
   next: => @move_to 'next'
   prev: => @move_to 'prev'
-  key_listener: (e) =>
-    switch e.keyCode
-      when 74 # j: select next
-        @next()
-      when 75 # k: select previous
-        @prev()
+  keybindings: () =>
+    key 'j', @next
+    key 'k', @prev
 
 # adapted from window.vote in the HN source. used for voting on comments and submissions
 vote = (id) ->
@@ -40,32 +41,27 @@ class Submission extends SelectableModel
       flag_href: submission_el.next().find('a[href^="/r?fnid"]')?.attr('href')
       comments_href: submission_el.next().find('a[href^="item"]')?.attr('href')
 
-  key_listener: (e) =>
-    switch e.keyCode
-      when 13 # enter: follow submission link
-        window.open(@get('href')) if @get('href') # Follow the title link (Show HN => no link)
-      when 85 # u: follow user link in comment or submission
-        window.open "/user?id=#{@get('user')}"
-      when 65 # a: upvote
-        vote @get('upvote_link_id')
-      when 67 # c: see comments
-        window.open @get('comments_href')
-      when 70 # f: flag/unflag
-        window.open(@get('flag_href')) if @get('flag_href')
-      else super e
+  keybindings: () =>
+    # enter: follow submission link
+    # u: follow user link in comment or submission
+    # a: upvote
+    # c: see comments
+    # f: flag/unflag
+    key 'enter', () =>
+      window.open(@get('href')) if @get('href') # Show HN => no link
+    key 'u', () => window.open "/user?id=#{@get('user')}"
+    key 'a', () => vote @get('upvote_link_id')
+    key 'c', () => window.open @get('comments_href')
+    key 'f', () =>
+      window.open(@get('flag_href')) if @get('flag_href')
+    super
 
 class AddComment extends SelectableModel
-  key_listener: (e) =>
-    # rotate focus between comment textarea, submit button, and nothing
-    current_focus = @get('focus')
-    return super(e) if (e.keyCode isnt 9) and (current_focus isnt 'textarea')
-    if not current_focus
-      @set { focus: 'textarea' }
-    else if current_focus is 'textarea'
-      @set { focus: 'input' }
-    else
-      @set { focus: 'textarea' }
-    false # block normal handling of tab
+  keybindings: () =>
+    key 'tab', () =>
+      @trigger 'focus', 'textarea'
+      false # don't double-tab
+    super
 
 class Comment extends SelectableModel
   defaults: () ->
@@ -102,22 +98,22 @@ class Comment extends SelectableModel
     @set { selected: false } if new_selection?
     new_selection?.set { selected: true }
     new_selection or @
-  key_listener: (e) =>
-    if 48 < e.keyCode <= 57 # 1-9: follow a link annotation
-      index = e.keyCode - 49
-      window.open(@get('links')[index]) if @get('links')[index]
-    else if e.keyCode is 65 # a: upvote
-      vote @get('upvote_link_id')
-    else if e.keyCode is 90 # z: downvote
-      vote @get('downvote_link_id')
-    else if e.keyCode is 82 # r: reply
+  keybindings: () =>
+    # 1-9: link annotation hotkeys
+    # a,z: {up,down}vote
+    # r: reply
+    # u: user's profile
+    # enter: collapse
+    _([1..9]).each (index) =>
+      key "#{index}", () =>
+        window.open(@get('links')[index]) if @get('links')[index]
+    key 'a', () => vote @get('upvote_link_id')
+    key 'z', () => vote @get('downvote_link_id')
+    key 'r', () =>
       window.open(@get('reply_href')) if @get('reply_href')
-    else if e.keyCode is 85 # u: user's profile
-      window.open "/user?id=#{@get('user')}"
-    else if e.keyCode is 13 # enter: collapse
-      @set 'collapsed', !@get('collapsed')
-    else
-      super
+    key 'u', () => window.open "/user?id=#{@get('user')}"
+    key 'enter', () => @set 'collapsed', !@get('collapsed')
+    super
 
 class SelectableCollection extends Backbone.Collection
   model: SelectableModel
@@ -152,8 +148,7 @@ class SubmissionView extends SelectableView
 class AddCommentView extends SelectableView
   initialize: (options) =>
     super
-    @model.on 'change:focus', (model, tag) =>
-      @$el.find(tag)?.focus() if tag
+    @model.on 'focus', (tag) => @$el.find(tag)?.focus()
 
 snark = _.once () -> alert 'WHY ARE YOU USING THE MOUSE???'
 class CollapseToggle extends Backbone.View
