@@ -122,8 +122,8 @@ class Comment extends SelectableModel
     # enter: collapse
     # shift + *: do it in the background
     _([1..9]).each (index) =>
-      key "#{index}",       open_tabs([@get('links')[index]], { active: true })
-      key "shift+#{index}", open_tabs([@get('links')[index]], { active: false })
+      key "#{index}",       open_tabs([@get('links')[index-1]], { active: true })
+      key "shift+#{index}", open_tabs([@get('links')[index-1]], { active: false })
     key 'a', () => vote @get('upvote_link_id')
     key 'z', () => vote @get('downvote_link_id')
     if @get('reply_href')
